@@ -1,0 +1,103 @@
+
+copy "https://github.com/sakmamun/PSM_MICA_2022/raw/75f8a7c45f7fc478c853e4ebac6e8a6087da8e92/mergeddatase_hh_fs.dta", replace
+use "mergeddatase_hh_fs.dta", clear
+
+rename hh1 cluster
+rename hh2 hhID
+rename hh6 area
+rename hh7 div
+rename hh7a district
+rename hh48 hhnumber
+rename hc11 ownComputer
+rename hc12 ownMobile
+rename hc13 ownInternet
+rename hc16 ownland
+rename cb3 age
+rename pr5 hasHomework
+rename hl4 gender
+rename pr7 hasSMC
+label var melevel "mothers' education level"
+
+***********************
+* EXPLORATORY ANALYSIS OF DATA
+*
+************************
+*Basic Summary Statistics
+
+summarize hhnumber hhage, detail												//* Continuous variables
+tab1 helevel melevel ownlan hasSMC, missing										//* Categorical variables
+graph box numeracy_score [pweight = hhweight], by(hhhelp)						// Boxplot
+
+*Distribution plot (For continuous variables (hhnumber, hhage)
+histogram hhnumber, percent title("Distribution of Household Number") 
+histogram hhage, percent title("Distribution of Household Age") 
+
+* Distribution plot (For categorical variables)
+graph bar (percent), over(helevel) title("Education Level Distribution")
+graph bar (percent), over(melevel) title("Mother's Education Distribution") 
+graph bar (percent), over(ownlan) title("Land Ownership Distribution")
+graph bar (percent), over(hasSMC) title("SMC Availability Distribution")
+
+* Propensity Score Mathing Estimation
+ssc install psmatch2  															// Install if not already installed
+psmatch2 (numeracy_score) helevel melevel hhnumber ownlan hasSMC hhage ///      * without gender subset
+         ,out(hhhelp) common
+twoway (kdensity _pscore if hhhelp == 1) (kdensity _pscore if hhhelp == 0), ///
+legend(label(1 "Treated") label(2 "Control")) ///
+title("Propensity Score Distribution") ///
+xtitle("Propensity Score") ytitle("Density") ///
+note("Kernel density plot by treatment status")
+
+psgraph, bin(10) t(hhhelp) p(_pscore)
+pstest
+
+psmatch2 (numeracy_score) helevel melevel hhnumber ownlan hasSMC hhage ///      * Subset of data for Male (gender =1)
+         if gender==1, out(hhhelp) common
+psgraph, bin(10) t(hhhelp) p(_pscore)
+
+twoway (kdensity _pscore if hhhelp == 1) (kdensity _pscore if hhhelp == 0), ///
+legend(label(1 "Treated") label(2 "Control")) ///
+title("Propensity Score Distribution") ///
+xtitle("Propensity Score") ytitle("Density") ///
+note("Kernel density plot by treatment status")
+
+
+psmatch2 (numeracy_score) helevel melevel hhnumber ownlan hasSMC hhage ///      * Subset of data for Female (gender =2)
+         if gender==2, out(hhhelp) common 
+psgraph, bin(10) t(hhhelp) p(_pscore)
+
+twoway (kdensity _pscore if hhhelp == 1) (kdensity _pscore if hhhelp == 0), ///
+legend(label(1 "Treated") label(2 "Control")) ///
+title("Propensity Score Distribution") ///
+xtitle("Propensity Score") ytitle("Density") ///
+note("Kernel density plot by treatment status")
+
+*******************************************************************************
+* ROBUSTNESS CHECK of the Estimation
+********************************************************************************
+            
+* k-Nearest neighbors matching: without gender subset
+
+psmatch2 hhhelp helevel melevel hhnumber ownland hasSMC hhage, ///
+    outcome(numeracy_score) ///
+    neighbor(4) ///
+    common ///
+    ate
+
+* Check balance
+pstest helevel melevel hhnumber ownlan hasSMC hhage, both graph
+pstest helevel melevel hhnumber ownlan hasSMC hhage, both						// Check balance
+
+
+*******************************************************************************
+* ROBUSTNESS CHECK
+********************************************************************************
+
+
+
+// Estimate propensity score
+logit hhhelp i.helevel i.melevel hhnumber ownlan hasSMC hhage
+predict _p, pr
+
+// Perform matching with caliper
+psmatch2 hhhelp if gender==1, outcome(numeracy_score) pscore(_p) caliper(0.05) logit
